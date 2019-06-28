@@ -1,0 +1,3 @@
+[submodule "data/www"]
+	path = data/www
+	url = https://github.com/rtldrone/OperatorInterface
