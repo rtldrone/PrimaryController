@@ -3,14 +3,17 @@
 #include <SPIFFS.h>
 #include <WiFi.h>
 #include <ESPAsyncWebServer.h>
+#include <Wire.h>
 
 #define WS_WATCHDOG_TIMEOUT 2000
 
+/* 
 enum BatteryState {
   OK,
   WARNING,
   BAD
 };
+*/
 
 const IPAddress apIP(192, 168, 4, 1);
 const IPAddress subnet(255, 255, 255, 0);
@@ -19,7 +22,7 @@ const char *oiResponseFmt = "S%.2f%i%.2f%.2fF%s"; //S[battery voltage][battery s
 
 //Live data
 double batteryVoltage = 12.00;
-int batteryState = BatteryState::OK;
+//int batteryState = BatteryState::OK;
 double currentSpeedMph = 5.00;
 double speedSetpointMph = 10.00;
 
@@ -38,13 +41,20 @@ void onWsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventTyp
       //Update command, log it
       Serial.println("Got Update");
       //Respond
-      client->printf(oiResponseFmt, batteryVoltage, batteryState, currentSpeedMph, speedSetpointMph, "");
+      //client->printf(oiResponseFmt, batteryVoltage, batteryState, currentSpeedMph, speedSetpointMph, "");
     }
   }
 }
 
+void sendWatchdogUpdate() {
+    Wire.beginTransmission(8);
+    Wire.write(0b01010101);
+    Wire.endTransmission();
+}
+
 void setup() {
   Serial.begin(115200);
+  Wire.begin();
   SPIFFS.begin();
   WiFi.mode(WIFI_AP);
   WiFi.softAPConfig(apIP, apIP, subnet);
@@ -61,5 +71,6 @@ void loop() {
   if (dt > WS_WATCHDOG_TIMEOUT) {
     Serial.println("WS TIMEOUT");
   }
+  sendWatchdogUpdate();
   delay(10);
 }
