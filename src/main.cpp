@@ -5,72 +5,44 @@
 #include <ESPAsyncWebServer.h>
 #include <Wire.h>
 
-#define WS_WATCHDOG_TIMEOUT 2000
-
-/* 
-enum BatteryState {
-  OK,
-  WARNING,
-  BAD
-};
-*/
-
-const IPAddress apIP(192, 168, 4, 1);
-const IPAddress subnet(255, 255, 255, 0);
-const char *ssid = "rtldrone";
-const char *oiResponseFmt = "S%.2f%i%.2f%.2fF%s"; //S[battery voltage][battery state][speed][speed setpoint]F[faults]
-
-//Live data
-double batteryVoltage = 12.00;
-//int batteryState = BatteryState::OK;
-double currentSpeedMph = 5.00;
-double speedSetpointMph = 10.00;
-
-AsyncWebServer webserver(80);
-AsyncWebSocket websocket("/ws");
-
-unsigned long ws_last_recvd = 0;
-
-void onWsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventType type, void *arg, uint8_t *data, size_t len) {
-  if (type == WS_EVT_CONNECT) {
-    Serial.println("WS Client Connected");
-  }
-  if (type == WS_EVT_DATA) {
-    ws_last_recvd = millis();
-    if (len == 1 && data[0] == 'U') {
-      //Update command, log it
-      Serial.println("Got Update");
-      //Respond
-      //client->printf(oiResponseFmt, batteryVoltage, batteryState, currentSpeedMph, speedSetpointMph, "");
-    }
-  }
+extern "C" {
+#include <bldc_interface_uart.h>
 }
 
-void sendWatchdogUpdate() {
-    Wire.beginTransmission(8);
-    Wire.write(0b01010101);
-    Wire.endTransmission();
+#define WS_WATCHDOG_TIMEOUT 2000
+
+void send_packet(unsigned char *data, unsigned int len) {
+    Serial1.write(data, len);
+}
+
+static void update_bldc_timer(void *parameter) {
+    TickType_t xLastWakeTime;
+    const TickType_t frequency = 1;
+    xLastWakeTime = xTaskGetTickCount();
+
+    //Run the timer every millisecond
+    for (;;) {
+        vTaskDelayUntil(&xLastWakeTime, frequency);
+        bldc_interface_uart_run_timer();
+    }
 }
 
 void setup() {
-  Serial.begin(115200);
-  Wire.begin();
-  SPIFFS.begin();
-  WiFi.mode(WIFI_AP);
-  WiFi.softAPConfig(apIP, apIP, subnet);
-  WiFi.softAP(ssid);
-  webserver.serveStatic("/", SPIFFS, "/www/").setDefaultFile("index.html");
-  websocket.onEvent(onWsEvent);
-  webserver.addHandler(&websocket);
-  webserver.begin();
+    Serial.begin(115200);
+    Serial1.begin(115200);
+    Wire.setClock(100000);
+    Wire.begin();
+    SPIFFS.begin();
+
+    bldc_interface_uart_init(send_packet);
+    xTaskCreate(update_bldc_timer, "UpdateBldcTimer", 10000, nullptr, 1, nullptr);
 }
 
 void loop() {
-  unsigned long current_time = millis();
-  unsigned long dt = current_time - ws_last_recvd;
-  if (dt > WS_WATCHDOG_TIMEOUT) {
-    Serial.println("WS TIMEOUT");
-  }
-  sendWatchdogUpdate();
-  delay(10);
+    while (Serial1.available()) {
+        unsigned char byteIn = Serial1.read();
+        bldc_interface_uart_process_byte(byteIn);
+    }
+
+    delay(10);
 }
