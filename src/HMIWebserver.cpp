@@ -7,14 +7,24 @@
 #include "VescCommManager.h"
 #include "FaultManager.h"
 #include <SPIFFS.h>
+#include "VelocityProfiler.h"
+
+extern "C" {
+#include <buffer.h> //Make use of VESC buffer library since it's simple
+}
 
 //Static member initialization
 AsyncWebServer HMIWebserver::webserver(80);
 AsyncWebSocket HMIWebserver::websocket("/ws");
 unsigned long HMIWebserver::lastValidRecvTime = 0UL;
+uint8_t *HMIWebserver::sendBuffer = (uint8_t*) malloc(HMI_OUTGOING_RESPONSE_SIZE);
+SemaphoreHandle_t HMIWebserver::lastValidRecvTimeMutex = xSemaphoreCreateMutex();
 
-//[battery voltage],[battery state],[speed],[speed setpoint]:[fault code]
-const char *HMIWebserver::updateResponseFmt = "%.2f,%i,%.2f,%.2f:%lu";
+uint8_t HMIWebserver::calculateBatteryState(float voltage) {
+    if (voltage >= BATTERY_OK_THRESHOLD_VOLTS) return 0;
+    if (voltage >= BATTERY_WARN_THRESHOLD_VOLTS) return 1;
+    return 2;
+}
 
 void HMIWebserver::begin() {
     webserver.serveStatic("/", SPIFFS, "/www/").setDefaultFile("index.html");
@@ -24,6 +34,9 @@ void HMIWebserver::begin() {
 }
 
 void HMIWebserver::onWsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventType type, void *arg, uint8_t *data, size_t len) {
+    //Note - All incoming data is LITTLE ENDIAN, all outgoing data is BIG ENDIAN
+    //This is because the ESP-32 is configured for little endian, so memcpy on incoming data is little endian
+    //But our buffer library is big endian
     unsigned long time = millis();
 
     if (type == WS_EVT_CONNECT) {
@@ -35,18 +48,31 @@ void HMIWebserver::onWsEvent(AsyncWebSocket *server, AsyncWebSocketClient *clien
     if (type == WS_EVT_DATA) {
         HMIIncomingPacket packet = parseIncomingPacket(data, len);
         if (packet.valid) {
+            xSemaphoreTake(lastValidRecvTimeMutex, portMAX_DELAY);
             lastValidRecvTime = time;
+            xSemaphoreGive(lastValidRecvTimeMutex);
             if (packet.command == HMIIncomingPacket::UPDATE) {
                 DEBUG_LOG("Received update packet");
                 auto vescData = VescCommManager::getData();
+                auto percentOut = VescCommManager::getPercentOut();
                 auto faultCode = FaultManager::getFaultCode();
-                client->printf(updateResponseFmt,
-                               vescData.inputVoltage,
-                               0.0f, //TODO add battery state
-                               MOTOR_RPM_TO_MPH(vescData.motorRpm),
-                               0.0f, //TODO add setpoint rpm
-                               faultCode
-                );
+                int32_t i = 0;
+                
+                buffer_append_float32_auto(sendBuffer, vescData.inputVoltage, &i); //Battery voltage (4 bytes)
+                buffer_append_uint8(sendBuffer, calculateBatteryState(vescData.inputVoltage), &i); //Battery State (1 byte)
+                buffer_append_float32_auto(sendBuffer, vescData.motorRpm, &i); //Current velocity (4 bytes)
+                buffer_append_float32_auto(sendBuffer, percentOut, &i); //Setpoint velocity (4 bytes)
+                buffer_append_uint32(sendBuffer, faultCode, &i); //Fault code (4 bytes)
+
+                client->binary(sendBuffer, HMI_OUTGOING_RESPONSE_SIZE);
+            } else if (packet.command == HMIIncomingPacket::STOP) {
+                DEBUG_LOG("Received stop packet");
+                //VescCommManager::stop();
+                VelocityProfiler::setVelocityTarget(0.0f);
+            } else if (packet.command == HMIIncomingPacket::SET_SPEED) {
+                DEBUG_LOG("Received set speed packet");
+                VelocityProfiler::setVelocityTarget(packet.speedSetpoint / 50.0f);
+                //VescCommManager::setPercentOut(packet.speedSetpoint / 50.0f);
             } else {
                 DEBUG_LOG("Unknown valid packet received?"); //This shouldn't happen
             }
@@ -59,15 +85,24 @@ void HMIWebserver::onWsEvent(AsyncWebSocket *server, AsyncWebSocketClient *clien
 HMIWebserver::HMIIncomingPacket HMIWebserver::parseIncomingPacket(const uint8_t *data, size_t len) {
     HMIIncomingPacket packet{};
     if (len >= 1) {
-        switch(data[0]) {
-            case HMI_INCOMING_CMD_UPDATE:
+        uint8_t cmd = data[0];
+        if (cmd == HMI_INCOMING_CMD_UPDATE) {
+            packet.command = HMIIncomingPacket::UPDATE;
+            packet.valid = true;
+        } else if (cmd == HMI_INCOMING_CMD_STOP) {
+            packet.command = HMIIncomingPacket::STOP;
+            packet.valid = true;
+        } else if (cmd == HMI_INCOMING_CMD_SET_SPEED) {
+            packet.command = HMIIncomingPacket::SET_SPEED;
+            if (len == 5) { //1 byte command identifier + 4 bytes of floating point data
                 packet.valid = true;
-                packet.command = HMIIncomingPacket::UPDATE;
-                break;
-            default:
+                memcpy(&packet.speedSetpoint, data + 1, sizeof(packet.speedSetpoint));
+            } else {
                 packet.valid = false;
-                packet.command = HMIIncomingPacket::UNKNOWN;
-                break;
+            }
+        } else {
+            packet.valid = false;
+            packet.command = HMIIncomingPacket::UNKNOWN;
         }
     } else {
         //A packet with zero length is always invalid
@@ -77,5 +112,8 @@ HMIWebserver::HMIIncomingPacket HMIWebserver::parseIncomingPacket(const uint8_t 
 }
 
 unsigned long HMIWebserver::getLastValidRecvTime() {
-    return lastValidRecvTime;
+    xSemaphoreTake(lastValidRecvTimeMutex, portMAX_DELAY);
+    uint32_t time = lastValidRecvTime;
+    xSemaphoreGive(lastValidRecvTimeMutex);
+    return time;
 }

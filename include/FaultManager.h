@@ -18,8 +18,6 @@ public:
     static void clearFault(Faults fault);
 
     static uint32_t getFaultCode();
-
-    static void begin();
 private:
     static uint32_t faultCode;
     static SemaphoreHandle_t lock;

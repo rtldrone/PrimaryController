@@ -8,6 +8,15 @@
 #include <ESPAsyncWebServer.h>
 
 #define HMI_INCOMING_CMD_UPDATE 'U'
+#define HMI_INCOMING_CMD_STOP 'X'
+#define HMI_INCOMING_CMD_SET_SPEED 'V'
+
+#define HMI_OUTGOING_RESPONSE_SIZE \
+  sizeof(float) /* Battery voltage */ \
++ sizeof(uint8_t) /* Battery state*/ \
++ sizeof(float) /* Current velocity */ \
++ sizeof(float) /* Setpoint velocity */ \
++ sizeof(uint32_t) /* Fault code */
 
 class HMIWebserver {
 public:
@@ -22,22 +31,29 @@ public:
     struct HMIIncomingPacket {
         enum IncomingCommand {
             UNKNOWN,
-            UPDATE
+            UPDATE,
+            STOP,
+            SET_SPEED
         };
 
         bool valid = false;
         IncomingCommand command = UNKNOWN;
+        float speedSetpoint = 0.0f;
     };
 private:
     static AsyncWebServer webserver;
     static AsyncWebSocket websocket;
 
-    static const char *updateResponseFmt;
-
     static unsigned long lastValidRecvTime;
+
+    static uint8_t *sendBuffer;
 
     static void onWsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventType type, void *arg, uint8_t *data, size_t len);
     static HMIIncomingPacket parseIncomingPacket(const uint8_t *data, size_t len);
+
+    static uint8_t calculateBatteryState(float voltage);
+
+    static SemaphoreHandle_t lastValidRecvTimeMutex;
 };
 
 #endif //PRIMARYCONTROLLER_HMIWEBSERVER_H

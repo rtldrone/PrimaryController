@@ -19,7 +19,9 @@ extern "C" {
 
 class VescCommManager {
 public:
+    static void stop();
     static void setPercentOut(float percentOut);
+    static float getPercentOut();
 
     static void begin(Stream *_serial);
 
@@ -35,13 +37,16 @@ private:
     static Stream *serial;
     static mc_values *values;
     static VESCData currentData;
+    static float currentDutyCycle;
 
     static void sendSerialData(unsigned char *data, unsigned int length);
-    static void update(void *parameter);
+    static void updateTimer(void *parameter);
     static void read(void *parameter);
+    static void write(void *parameter);
 
     static void onValues(mc_values *newValues);
 
+    static SemaphoreHandle_t commandLock;
     static SemaphoreHandle_t valuesLock;
 };
 

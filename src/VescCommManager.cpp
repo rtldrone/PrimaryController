@@ -2,8 +2,10 @@
 // Created by cameronearle on 7/26/2019.
 //
 
+#include <VelocityProfiler.h>
 #include "VescCommManager.h"
 #include "Constants.h"
+#include "HMIWebserver.h"
 
 extern "C" {
 #include <bldc_interface_uart.h>
@@ -14,13 +16,15 @@ extern "C" {
 Stream *VescCommManager::serial;
 mc_values *VescCommManager::values = new mc_values; //Initialize a blank object to prevent unauthorized access
 VescCommManager::VESCData VescCommManager::currentData{};
-SemaphoreHandle_t VescCommManager::valuesLock;
+SemaphoreHandle_t VescCommManager::valuesLock = xSemaphoreCreateMutex();
+SemaphoreHandle_t VescCommManager::commandLock = xSemaphoreCreateMutex();
+float VescCommManager::currentDutyCycle = 0.0f;
 
 void VescCommManager::sendSerialData(unsigned char *data, unsigned int length) {
     serial->write(data, length);
 }
 
-void VescCommManager::update(void *parameter) {
+void VescCommManager::updateTimer(void *parameter) {
     TickType_t lastWakeTime;
     const TickType_t frequency = VESC_COMM_MANAGER_RT_FREQUENCY;
     lastWakeTime = xTaskGetTickCount();
@@ -51,6 +55,30 @@ void VescCommManager::read(void *parameter) {
     }
 }
 
+void VescCommManager::write(void *parameter) {
+    TickType_t lastWakeTime;
+    const TickType_t frequency = VESC_WRITE_RATE_MS;
+    lastWakeTime = xTaskGetTickCount();
+
+    for (;;) {
+        vTaskDelayUntil(&lastWakeTime, frequency);
+
+        float velocity = VelocityProfiler::update();
+        setPercentOut(velocity);
+
+        uint32_t time = millis();
+        uint32_t lastValidHMIRecvTime = HMIWebserver::getLastValidRecvTime();
+        if (time - lastValidHMIRecvTime >= HMI_WATCHDOG_TIMEOUT_MS) {
+            VelocityProfiler::reset();
+            stop();
+        }
+
+        xSemaphoreTake(commandLock, portMAX_DELAY);
+        bldc_interface_set_duty_cycle(currentDutyCycle);
+        xSemaphoreGive(commandLock);
+    }
+}
+
 void VescCommManager::onValues(mc_values *newValues) {
     xSemaphoreTake(valuesLock, portMAX_DELAY);
     values = newValues;
@@ -67,10 +95,8 @@ void VescCommManager::begin(Stream *_serial) {
 
     bldc_interface_set_rx_value_func(onValues); //Function to be called when mc_values are received
 
-    valuesLock = xSemaphoreCreateBinary();
-
     xTaskCreatePinnedToCore( //Start the timer update task
-            update,
+            updateTimer,
             "VescStateMachine",
             VESC_COMM_MANAGER_RT_STACK_DEPTH,
             nullptr,
@@ -87,10 +113,32 @@ void VescCommManager::begin(Stream *_serial) {
             nullptr,
             1
     );
+    xTaskCreatePinnedToCore(
+            write,
+            "VescWrite",
+            VESC_COMM_MANAGER_RT_STACK_DEPTH,
+            nullptr,
+            VESC_COMM_MANAGER_RT_PRIO,
+            nullptr,
+            1
+    );
+}
+
+void VescCommManager::stop() {
+    setPercentOut(0.0f); //Stop the motor
 }
 
 void VescCommManager::setPercentOut(float percentOut) {
-    bldc_interface_set_duty_cycle(percentOut);
+    xSemaphoreTake(commandLock, portMAX_DELAY);
+    currentDutyCycle = percentOut;
+    xSemaphoreGive(commandLock);
+}
+
+float VescCommManager::getPercentOut() {
+    xSemaphoreTake(commandLock, portMAX_DELAY);
+    float toReturn = currentDutyCycle;
+    xSemaphoreGive(commandLock);
+    return toReturn;
 }
 
 VescCommManager::VESCData VescCommManager::getData() {

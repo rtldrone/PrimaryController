@@ -5,7 +5,7 @@
 #include <FreeRTOS.h>
 #include "FaultManager.h"
 
-SemaphoreHandle_t FaultManager::lock;
+SemaphoreHandle_t FaultManager::lock = xSemaphoreCreateMutex();
 uint32_t FaultManager::faultCode = 0UL;
 
 void FaultManager::registerFault(FaultManager::Faults fault) {
@@ -27,8 +27,4 @@ uint32_t FaultManager::getFaultCode() {
     auto value = faultCode;
     xSemaphoreGive(lock);
     return value;
-}
-
-void FaultManager::begin() {
-    lock = xSemaphoreCreateBinary();
 }

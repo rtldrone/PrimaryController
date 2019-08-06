@@ -58,11 +58,24 @@
 //How frequently to request values from the VESC
 #define VESC_READ_RATE_MS 500
 
+//How frequently to write values to the VESC
+#define VESC_WRITE_RATE_MS 100
+
+//Number of milliseconds to wait for the HMI to come back if disconnected before stopping the motor
+#define HMI_WATCHDOG_TIMEOUT_MS 1000
+
 /**
- * Units and conversions
+ * Units and conversions, hardware parameters
  */
 
 //Macro to convert from motor shaft rpm directly to linear MPH
 #define MOTOR_RPM_TO_MPH(rpm) rpm //TODO add correct conversion
+
+#define MOTOR_ACCELERATION_PER_SECOND 0.1
+
+//Battery thresholds.  The battery will be defined as OK if the voltage is above the threshold,
+//with the same logic for warn and bad states.
+#define BATTERY_OK_THRESHOLD_VOLTS 19.6f
+#define BATTERY_WARN_THRESHOLD_VOLTS 18.0f
 
 #endif //PRIMARYCONTROLLER_CONFIG_H

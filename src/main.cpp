@@ -5,11 +5,8 @@
 
 #include "Constants.h"
 #include "HMIWebserver.h"
-
+#include "FaultManager.h"
 #include "VescCommManager.h"
-extern "C"  {
-#include <bldc_interface.h>
-}
 
 void setup() {
 #ifdef DO_DEBUG
