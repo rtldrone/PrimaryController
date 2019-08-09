@@ -54,25 +54,24 @@ void HMIWebserver::onWsEvent(AsyncWebSocket *server, AsyncWebSocketClient *clien
             if (packet.command == HMIIncomingPacket::UPDATE) {
                 DEBUG_LOG("Received update packet");
                 auto vescData = VescCommManager::getData();
-                auto percentOut = VescCommManager::getPercentOut();
+                auto targetSpeed = VelocityProfiler::getCurrentVelocity();
                 auto faultCode = FaultManager::getFaultCode();
                 int32_t i = 0;
                 
                 buffer_append_float32_auto(sendBuffer, vescData.inputVoltage, &i); //Battery voltage (4 bytes)
                 buffer_append_uint8(sendBuffer, calculateBatteryState(vescData.inputVoltage), &i); //Battery State (1 byte)
-                buffer_append_float32_auto(sendBuffer, vescData.motorRpm, &i); //Current velocity (4 bytes)
-                buffer_append_float32_auto(sendBuffer, percentOut, &i); //Setpoint velocity (4 bytes)
+                buffer_append_float32_auto(sendBuffer, vescData.currentDraw, &i); //Current draw (4 bytes)
+                buffer_append_float32_auto(sendBuffer, vescData.motorRpm, &i); //Speed (4 bytes)
+                buffer_append_float32_auto(sendBuffer, targetSpeed, &i); //Target speed (4 bytes)
                 buffer_append_uint32(sendBuffer, faultCode, &i); //Fault code (4 bytes)
 
                 client->binary(sendBuffer, HMI_OUTGOING_RESPONSE_SIZE);
             } else if (packet.command == HMIIncomingPacket::STOP) {
                 DEBUG_LOG("Received stop packet");
-                //VescCommManager::stop();
                 VelocityProfiler::setVelocityTarget(0.0f);
             } else if (packet.command == HMIIncomingPacket::SET_SPEED) {
                 DEBUG_LOG("Received set speed packet");
-                VelocityProfiler::setVelocityTarget(packet.speedSetpoint / 50.0f);
-                //VescCommManager::setPercentOut(packet.speedSetpoint / 50.0f);
+                VelocityProfiler::setVelocityTarget(packet.speedSetpoint / 50.0f); //TODO use correct value
             } else {
                 DEBUG_LOG("Unknown valid packet received?"); //This shouldn't happen
             }

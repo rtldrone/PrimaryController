@@ -11,7 +11,8 @@
 class FaultManager {
 public:
     enum Faults {
-        VESC_COMM_FAULT
+        VESC_COMM_FAULT,
+        TEST_FAULT
     };
 
     static void registerFault(Faults fault);

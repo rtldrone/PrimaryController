@@ -14,8 +14,9 @@
 #define HMI_OUTGOING_RESPONSE_SIZE \
   sizeof(float) /* Battery voltage */ \
 + sizeof(uint8_t) /* Battery state*/ \
-+ sizeof(float) /* Current velocity */ \
-+ sizeof(float) /* Setpoint velocity */ \
++ sizeof(float) /* Current draw */ \
++ sizeof(float) /* Speed */ \
++ sizeof(float) /* Target speed */ \
 + sizeof(uint32_t) /* Fault code */
 
 class HMIWebserver {

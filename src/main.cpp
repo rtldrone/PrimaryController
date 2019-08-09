@@ -27,5 +27,9 @@ void setup() {
 }
 
 void loop() {
-    vTaskDelete(nullptr); //Cancel the loop task as we aren't using it
+    //vTaskDelete(nullptr); //Cancel the loop task as we aren't using it
+    delay(10000);
+    FaultManager::registerFault(FaultManager::VESC_COMM_FAULT);
+    delay(30000);
+    FaultManager::clearFault(FaultManager::VESC_COMM_FAULT);
 }

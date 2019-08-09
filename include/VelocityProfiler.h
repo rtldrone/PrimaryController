@@ -11,6 +11,7 @@ class VelocityProfiler {
 public:
     static void setVelocityTarget(float velocity);
     static float update();
+    static float getCurrentVelocity();
     static void reset();
 private:
     static float targetVelocity;

@@ -63,15 +63,13 @@ void VescCommManager::write(void *parameter) {
     for (;;) {
         vTaskDelayUntil(&lastWakeTime, frequency);
 
-        float velocity = VelocityProfiler::update();
-        setPercentOut(velocity);
-
-        uint32_t time = millis();
         uint32_t lastValidHMIRecvTime = HMIWebserver::getLastValidRecvTime();
-        if (time - lastValidHMIRecvTime >= HMI_WATCHDOG_TIMEOUT_MS) {
-            VelocityProfiler::reset();
-            stop();
+        if (lastWakeTime - lastValidHMIRecvTime >= HMI_WATCHDOG_TIMEOUT_MS) {
+            VelocityProfiler::setVelocityTarget(0.0f); //Stop the vehicle if we time out the HMI
         }
+
+        float velocity = VelocityProfiler::update();
+        setPercentOut(velocity); //TODO use correct setter and units
 
         xSemaphoreTake(commandLock, portMAX_DELAY);
         bldc_interface_set_duty_cycle(currentDutyCycle);
@@ -83,8 +81,7 @@ void VescCommManager::onValues(mc_values *newValues) {
     xSemaphoreTake(valuesLock, portMAX_DELAY);
     values = newValues;
     currentData.inputVoltage = values->v_in;
-    currentData.inputCurrentDraw = values->current_in;
-    currentData.motorCurrentDraw = values->current_motor;
+    currentData.currentDraw = values->current_in;
     currentData.motorRpm = values->rpm;
     xSemaphoreGive(valuesLock);
 }
@@ -145,8 +142,7 @@ VescCommManager::VESCData VescCommManager::getData() {
     VESCData data{};
     xSemaphoreTake(valuesLock, portMAX_DELAY);
     data.inputVoltage = currentData.inputVoltage;
-    data.inputCurrentDraw = currentData.inputCurrentDraw;
-    data.motorCurrentDraw = currentData.motorCurrentDraw;
+    data.currentDraw = currentData.currentDraw;
     data.motorRpm = currentData.motorRpm;
     xSemaphoreGive(valuesLock);
     return data;

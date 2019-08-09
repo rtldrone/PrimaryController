@@ -41,3 +41,10 @@ float VelocityProfiler::update() {
     xSemaphoreGive(lock);
     return currentVelocity;
 }
+
+float VelocityProfiler::getCurrentVelocity() {
+    xSemaphoreTake(lock, portMAX_DELAY);
+    float value = currentVelocity;
+    xSemaphoreGive(lock);
+    return value;
+}

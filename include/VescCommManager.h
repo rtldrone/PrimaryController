@@ -27,8 +27,7 @@ public:
 
     struct VESCData {
         float inputVoltage;
-        float inputCurrentDraw;
-        float motorCurrentDraw;
+        float currentDraw;
         float motorRpm;
     };
 
