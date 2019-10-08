@@ -8,6 +8,14 @@
 #include "FaultManager.h"
 #include "VescCommManager.h"
 
+#define I2C_ENABLE_BYTE 0b01010101
+
+void sendSafetyUpdate() {
+    Wire.beginTransmission(8);
+    Wire.write(I2C_ENABLE_BYTE);
+    Wire.endTransmission();
+}
+
 void setup() {
 #ifdef DO_DEBUG
     Serial.begin(115200); //Only enable USB serial if debugging is enabled
@@ -28,8 +36,6 @@ void setup() {
 
 void loop() {
     //vTaskDelete(nullptr); //Cancel the loop task as we aren't using it
-    delay(10000);
-    FaultManager::registerFault(FaultManager::VESC_COMM_FAULT);
-    delay(30000);
-    FaultManager::clearFault(FaultManager::VESC_COMM_FAULT);
+    sendSafetyUpdate();
+    delay(100);
 }
